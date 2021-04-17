@@ -1,0 +1,58 @@
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_eeca4/fast && /usr/bin/make -f CMakeFiles/cmTC_eeca4.dir/build.make CMakeFiles/cmTC_eeca4.dir/build
+make[1]: Entering directory '/home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_eeca4.dir/src.c.o
+/usr/bin/cc   -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith  -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_eeca4.dir/src.c.o   -c /home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_eeca4
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_eeca4.dir/link.txt --verbose=1
+/usr/bin/cc -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_eeca4.dir/src.c.o  -o cmTC_eeca4 
+/usr/bin/ld: CMakeFiles/cmTC_eeca4.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_eeca4.dir/build.make:87: cmTC_eeca4] Error 1
+make[1]: Leaving directory '/home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_eeca4/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_cf721/fast && /usr/bin/make -f CMakeFiles/cmTC_cf721.dir/build.make CMakeFiles/cmTC_cf721.dir/build
+make[1]: Entering directory '/home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_cf721.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith  -DCHECK_FUNCTION_EXISTS=pthread_create   -std=gnu99 -o CMakeFiles/cmTC_cf721.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_cf721
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_cf721.dir/link.txt --verbose=1
+/usr/bin/cc -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith  -DCHECK_FUNCTION_EXISTS=pthread_create    CMakeFiles/cmTC_cf721.dir/CheckFunctionExists.c.o  -o cmTC_cf721  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_cf721.dir/build.make:87: cmTC_cf721] Error 1
+make[1]: Leaving directory '/home/rob/Documents/raylib-tiled/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_cf721/fast] Error 2
+
+
+

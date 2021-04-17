@@ -1,0 +1,1 @@
+/usr/bin/cc    CMakeFiles/raylib-tiled-example.dir/raylib-tiled-example.c.o  -o raylib-tiled-example  ../../vendor/raylib/raylib/libraylib.a -lm -lpthread /usr/lib/x86_64-linux-gnu/libGL.so /usr/lib/x86_64-linux-gnu/libGLU.so ../../vendor/raylib/raylib/external/glfw/src/libglfw3.a /usr/lib/x86_64-linux-gnu/librt.so -lm -ldl /usr/lib/x86_64-linux-gnu/libX11.so -lpthread 
