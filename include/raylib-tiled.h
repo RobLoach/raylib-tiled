@@ -1,16 +1,15 @@
 /**********************************************************************************************
 *
-*   raylib-physfs - Integrate PhysFS with raylib, allowing to load images, audio and fonts from data archives.
+*   raylib-tiled - Integrate tiled with raylib, allowing to load images, audio and fonts from data archives.
 *
 *   Copyright 2021 Rob Loach (@RobLoach)
 *
 *   DEPENDENCIES:
 *       raylib https://www.raylib.com/
-*       physfs https://www.icculus.org/physfs/
 *
 *   LICENSE: zlib/libpng
 *
-*   raylib-physfs is licensed under an unmodified zlib/libpng license, which is an OSI-certified,
+*   raylib-tiled is licensed under an unmodified zlib/libpng license, which is an OSI-certified,
 *   BSD-like license that allows static linking with closed source software:
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
@@ -42,9 +41,10 @@ extern "C" {
 typedef struct Map Map;
 
 Map LoadMap(const char* fileName);
-Map LoadMapFromMemory(const unsigned char *fileData, int dataSize);
+Map LoadMapFromMemory(const unsigned char *fileData, int dataSize, const char* baseDir);
 bool IsMapReady(Map map);
 void UnloadTiled(Map map);
+void DrawMap(Map map, int posX, int posY, Color tint);
 
 #ifdef __cplusplus
 }
@@ -67,6 +67,9 @@ void UnloadTiled(Map map);
 
 #define STRPOOL_EMBEDDED_ASSERT(condition) if (!(condition)) { TraceLog(LOG_ERROR, "TILED: Failed assert \"%s\" in %s:%i", #condition, __FILE__, __LINE__); }
 #define STRPOOL_EMBEDDED_STRNICMP(s1, s2, len) (TextIsEqual(TextToLower(s1), TextToLower(s2)))
+
+#define STRPOOL_EMBEDDED_MALLOC(ctx, size) (MemAlloc(size))
+#define STRPOOL_EMBEDDED_FREE(ctx, ptr) (MemFree(ptr))
 
 // Override how Cute attempts to load files.
 #define CUTE_TILED_STDIO
@@ -116,19 +119,89 @@ struct Map {
 Map LoadMap(const char* fileName) {
     unsigned int bytesRead;
     unsigned char* fileData = LoadFileData(fileName, &bytesRead);
-    Map map = LoadMapFromMemory(fileData, bytesRead);
+    Map map = LoadMapFromMemory(fileData, bytesRead, GetDirectoryPath(fileName));
     UnloadFileData(fileData);
     return map;
 }
 
-Map LoadMapFromMemory(const unsigned char *fileData, int dataSize) {
-    struct Map map;
-    map.map = cute_tiled_load_map_from_memory(fileData, dataSize, 0);
-    if (map.map == NULL) {
-        TraceLog(LOG_ERROR, "TILED: Failed to load map data");
-        return map;
+/**
+ * Load the given cute_tiled string as a texture.
+ */
+void LoadMapStringTexture(cute_tiled_string_t* image, const char* baseDir) {
+    const char* fileName = image->ptr;
+    const char* imagePath = fileName;
+    if (TextLength(baseDir) > 0) {
+        imagePath = TextFormat("%s/%s", baseDir, fileName);
     }
-    return map;
+    Texture texture = LoadTexture(imagePath);
+    if (texture.id == 0) {
+        TraceLog(LOG_ERROR, "TILED: Failed to load layer texture %s", imagePath);
+        return;
+    }
+
+    // Save the texture data back into the string.
+    Texture* texturePtr = (Texture*)MemAlloc(sizeof(Texture));
+    texturePtr->format = texture.format;
+    texturePtr->height = texture.height;
+    texturePtr->id = texture.id;
+    texturePtr->mipmaps = texture.mipmaps;
+    texturePtr->width = texture.width;
+    image->ptr = (const char*)texturePtr;
+    TraceLog(LOG_INFO, "%i", image->hash_id);
+}
+
+void LoadMapLayerData(cute_tiled_layer_t* layer, const char* baseDir) {
+    if (TextIsEqual(layer->type.ptr, "imagelayer")) {
+        LoadMapStringTexture(&layer->image, baseDir);
+    }
+    else if (TextIsEqual(layer->type.ptr, "group")) {
+        cute_tiled_layer_t* layer = layer->layers;
+        while (layer) {
+            LoadMapLayerData(layer, baseDir);
+            layer = layer->next;
+        }
+    }
+}
+
+void UnloadMapLayerData(cute_tiled_layer_t* layer) {
+    if (TextIsEqual(layer->type.ptr, "imagelayer")) {
+        Texture* texture = (Texture*)layer->image.ptr;
+        UnloadTexture(*texture);
+        layer->image.ptr = "";
+    }
+    else if (TextIsEqual(layer->type.ptr, "group")) {
+        cute_tiled_layer_t* layer = layer->layers;
+        while (layer) {
+            UnloadMapLayerData(layer);
+            layer = layer->next;
+        }
+    }
+}
+
+Map LoadMapFromMemory(const unsigned char *fileData, int dataSize, const char* baseDir) {
+    struct Map output;
+    cute_tiled_map_t* map = cute_tiled_load_map_from_memory(fileData, dataSize, 0);
+    if (map == NULL) {
+        TraceLog(LOG_ERROR, "TILED: Failed to load map data");
+        output.map = NULL;
+        return output;
+    }
+
+    // Load all associated images.
+    cute_tiled_layer_t* layer = map->layers;
+    while (layer) {
+        LoadMapLayerData(layer, baseDir);
+        layer = layer->next;
+    }
+
+    cute_tiled_tileset_t* tileset = map->tilesets;
+    while (tileset) {
+        LoadMapStringTexture(&tileset->image, baseDir);
+        tileset = tileset->next;
+    }
+
+    output.map = map;
+    return output;
 }
 
 bool IsMapReady(Map map) {
@@ -139,7 +212,114 @@ void UnloadTiled(Map map) {
     if (map.map == NULL) {
         return;
     }
+
+    // Unload all the internal raylib data.
+    cute_tiled_layer_t* layer = map.map->layers;
+    while (layer) {
+        UnloadMapLayerData(layer);
+        layer = layer->next;
+    }
+
+    cute_tiled_tileset_t* tileset = map.map->tilesets;
+    while (tileset) {
+        if (tileset->image.ptr != NULL) {
+            Texture* texture = (Texture*)tileset->image.ptr;
+            UnloadTexture(*texture);
+        }
+        tileset = tileset->next;
+    }
+
     cute_tiled_free_map(map.map);
+}
+
+ cute_tiled_tile_descriptor_t* GetTileFromGid(cute_tiled_map_t* map, int gid) {
+    cute_tiled_tileset_t* tileset = map->tilesets;
+    while (tileset) {
+        cute_tiled_tile_descriptor_t* tile = tileset->tiles;
+        while (tile) {
+            if (tile->tile_index == gid) {
+                return tile;
+            }
+            tile = tile->next;
+        }
+        tileset = tileset->next;
+    }
+    return NULL;
+}
+
+cute_tiled_tileset_t* GetTilesetFromHash(cute_tiled_tileset_t* tilesets, CUTE_TILED_U64 hash_id) {
+    while (tilesets) {
+        if (tilesets->image.hash_id == hash_id) {
+            return tilesets;
+        }
+        tilesets = tilesets->next;
+    }
+    return NULL;
+}
+
+void DrawMapTile(Texture *texture, unsigned int sx, unsigned int sy, unsigned int sw, unsigned int sh,
+               int dx, int dy, float opacity, /*unsigned int flags,*/ Color tint) {
+    Color newTint = ColorAlpha(tint, opacity);
+    DrawTextureRec(*texture, (Rectangle) {sx, sy, sw, sh}, (Vector2) {dx, dy}, newTint);
+}
+
+void DrawMapLayerTiles(cute_tiled_map_t* map, cute_tiled_layer_t* layer, int posX, int posY, Color tint) {
+	unsigned long i, j;
+	unsigned int gid, x, y, w, h, flags;
+	float op;
+	cute_tiled_tileset_t *ts;
+	cute_tiled_string_t *im;
+	void* image;
+	op = layer->opacity;
+	for (i = 0; i < layer->height; i++) {
+		for (j = 0; j < layer->width; j++) {
+			gid = layer->data[(i * layer->width) + j];
+
+            cute_tiled_tile_descriptor_t* tile = GetTileFromGid(map, gid);
+            
+            if (tile != NULL) {
+                ts = GetTilesetFromHash(map->tilesets, tile->image.hash_id);
+                if (ts != NULL) {
+                    x = ts->margin + (j * ts->tilewidth)  + (j * ts->spacing);
+                    y = ts->margin + (i * ts->tileheight)  + (i * ts->spacing);
+                    // x  = map->tiles[gid]->ul_x;
+                    // y  = map->tiles[gid]->ul_y;
+                    w  = ts->tilewidth;
+                    h  = ts->tileheight;
+                    // flags = (layer->content.gids[(i*map->width)+j]) & ~TMX_FLIP_BITS_REMOVAL;
+                    //DrawMapTile((Texture*)ts->image.ptr, x, y, w, h, j*ts->tilewidth + posX, i*ts->tileheight + posY, op, /*flags,*/ tint);
+                }
+            }
+		}
+	}
+}
+
+void DrawMapLayerImage(cute_tiled_string_t image, int posX, int posY, Color tint) {
+    Texture* texture = (Texture*)image.ptr;
+    DrawTexture(*texture, posX, posY, tint);
+}
+
+void DrawMapLayer(cute_tiled_map_t* map, cute_tiled_layer_t* layer, int posX, int posY, Color tint) {
+	while (layer) {
+		if (layer->visible == 1) {
+            if (TextIsEqual(layer->type.ptr, "group")) {
+                DrawMapLayer(map, layer->layers, layer->offsetx + posX, layer->offsety + posY, tint);
+            } else if (TextIsEqual(layer->type.ptr, "objectgroup")) {
+                //DrawMapLayerObjects(layer->objects, layer->offsetx + posX, layer->offsety + posY, tint);
+            } else if (TextIsEqual(layer->type.ptr, "imagelayer")) {
+                DrawMapLayerImage(layer->image, layer->offsetx + posX, layer->offsety + posY, tint);
+            } else if (TextIsEqual(layer->type.ptr, "tilelayer")) {
+                DrawMapLayerTiles(map, layer, layer->offsetx + posX, layer->offsety + posY, tint);
+            }
+		}
+		layer = layer->next;
+	}
+}
+
+void DrawMap(Map map, int posX, int posY, Color tint) {
+    Color background = GetColor(map.map->backgroundcolor);
+    DrawRectangle(posX, posY, map.map->width, map.map->height, background);
+    DrawMapLayer(map.map, map.map->layers, posX, posY, tint);
 }
 
 #ifdef __cplusplus
@@ -148,5 +328,3 @@ void UnloadTiled(Map map) {
 
 #endif  // RAYLIB_TILED_IMPLEMENTATION_ONCE
 #endif  // RAYLIB_TILED_IMPLEMENTATION
-
-
