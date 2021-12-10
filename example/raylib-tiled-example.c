@@ -40,7 +40,7 @@ int main() {
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
-    UnloadTiled(map);             // Unload the Tiled map
+    UnloadMap(map);             // Unload the Tiled map
 
     CloseWindow();                // Close window and OpenGL context
     //--------------------------------------------------------------------------------------

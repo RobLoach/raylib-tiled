@@ -43,7 +43,7 @@ typedef struct Map Map;
 Map LoadMap(const char* fileName);
 Map LoadMapFromMemory(const unsigned char *fileData, int dataSize, const char* baseDir);
 bool IsMapReady(Map map);
-void UnloadTiled(Map map);
+void UnloadMap(Map map);
 void DrawMap(Map map, int posX, int posY, Color tint);
 
 #ifdef __cplusplus
@@ -71,7 +71,8 @@ void DrawMap(Map map, int posX, int posY, Color tint);
 #define STRPOOL_EMBEDDED_MALLOC(ctx, size) (MemAlloc(size))
 #define STRPOOL_EMBEDDED_FREE(ctx, ptr) (MemFree(ptr))
 
-// Override how Cute attempts to load files.
+/*
+// TODO: Override how Cute attempts to load files.
 #define CUTE_TILED_STDIO
 #define CUTE_TILED_SNPRINTF(s, n, format, arg1, arg2) TextCopy(error, TextFormat(format, arg1, arg2))
 #define CUTE_TILED_SEEK_SET 0
@@ -105,6 +106,7 @@ void raylib_tiled_fclose(CUTE_TILED_FILE* fp) {
 #define CUTE_TILED_FREAD raylib_tiled_fread
 #define CUTE_TILED_FTELL raylib_tiled_ftell
 #define CUTE_TILED_FCLOSE raylib_tiled_fclose
+*/
 
 #ifdef __cplusplus
 extern "C" {
@@ -208,7 +210,7 @@ bool IsMapReady(Map map) {
     return map.map != NULL;
 }
 
-void UnloadTiled(Map map) {
+void UnloadMap(Map map) {
     if (map.map == NULL) {
         return;
     }
