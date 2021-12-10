@@ -30,7 +30,7 @@ int main() {
 
             ClearBackground(RAYWHITE);
 
-            DrawMap(map, 10, 10, RAYWHITE);
+            DrawMap(map, 10, 10, WHITE);
 
             DrawText("this IS a texture loaded from an image!", 300, 370, 10, GRAY);
 

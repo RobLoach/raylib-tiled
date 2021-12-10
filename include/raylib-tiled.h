@@ -127,7 +127,16 @@ Map LoadMap(const char* fileName) {
 /**
  * Load the given cute_tiled string as a texture.
  */
-void LoadMapStringTexture(cute_tiled_string_t* image, const char* baseDir) {
+Texture* LoadMapStringTexture(cute_tiled_string_t* image, const char* baseDir) {
+    if (image->ptr[0] == '|') {
+        if (image->hash_id != 0) {
+            Texture* texture = (Texture*)image->hash_id;
+            return texture;
+        } else {
+            return NULL;
+        }
+    }
+
     const char* fileName = image->ptr;
     const char* imagePath = fileName;
     if (TextLength(baseDir) > 0) {
@@ -135,8 +144,10 @@ void LoadMapStringTexture(cute_tiled_string_t* image, const char* baseDir) {
     }
     Texture texture = LoadTexture(imagePath);
     if (texture.id == 0) {
+        image->hash_id = 0;
+        image->ptr = "|";
         TraceLog(LOG_ERROR, "TILED: Failed to load layer texture %s", imagePath);
-        return;
+        return NULL;
     }
 
     // Save the texture data back into the string.
@@ -146,8 +157,10 @@ void LoadMapStringTexture(cute_tiled_string_t* image, const char* baseDir) {
     texturePtr->id = texture.id;
     texturePtr->mipmaps = texture.mipmaps;
     texturePtr->width = texture.width;
-    image->ptr = (const char*)texturePtr;
-    TraceLog(LOG_INFO, "%i", image->hash_id);
+    //image->ptr = (const char*)texturePtr;
+    image->hash_id = (unsigned long long)texturePtr;
+    image->ptr = "<";
+    TraceLog(LOG_INFO, "%i", texturePtr->width);
 }
 
 void LoadMapLayerData(cute_tiled_layer_t* layer, const char* baseDir) {
@@ -168,6 +181,7 @@ void UnloadMapLayerData(cute_tiled_layer_t* layer) {
         Texture* texture = (Texture*)layer->image.ptr;
         UnloadTexture(*texture);
         layer->image.ptr = "";
+        layer->image.hash_id = 0;
     }
     else if (TextIsEqual(layer->type.ptr, "group")) {
         cute_tiled_layer_t* layer = layer->layers;
@@ -187,17 +201,23 @@ Map LoadMapFromMemory(const unsigned char *fileData, int dataSize, const char* b
         return output;
     }
 
-    // Load all associated images.
-    cute_tiled_layer_t* layer = map->layers;
-    while (layer) {
-        LoadMapLayerData(layer, baseDir);
-        layer = layer->next;
-    }
-
+    // Load all tileset data
     cute_tiled_tileset_t* tileset = map->tilesets;
     while (tileset) {
         LoadMapStringTexture(&tileset->image, baseDir);
         tileset = tileset->next;
+    }
+
+    // Load all associated images.
+    cute_tiled_layer_t* layer = map->layers;
+    while (layer) {
+        LoadMapLayerData(layer, baseDir);
+
+        int* data = layer->data;
+        for (int i = 0; i < layer->data_count; i++) {
+            int gid = layer->data[i];
+        }
+        layer = layer->next;
     }
 
     output.map = map;
@@ -232,12 +252,14 @@ void UnloadTiled(Map map) {
     cute_tiled_free_map(map.map);
 }
 
- cute_tiled_tile_descriptor_t* GetTileFromGid(cute_tiled_map_t* map, int gid) {
+ cute_tiled_tile_descriptor_t* GetTileFromGid(cute_tiled_map_t* map, int gid, Texture** texture, cute_tiled_tileset_t** ts) {
     cute_tiled_tileset_t* tileset = map->tilesets;
     while (tileset) {
         cute_tiled_tile_descriptor_t* tile = tileset->tiles;
         while (tile) {
             if (tile->tile_index == gid) {
+                *texture = (Texture*)tileset->image.hash_id;
+                *ts = tileset;
                 return tile;
             }
             tile = tile->next;
@@ -250,6 +272,7 @@ void UnloadTiled(Map map) {
 cute_tiled_tileset_t* GetTilesetFromHash(cute_tiled_tileset_t* tilesets, CUTE_TILED_U64 hash_id) {
     while (tilesets) {
         if (tilesets->image.hash_id == hash_id) {
+            TraceLog(LOG_ERROR, "FDSAFDS");
             return tilesets;
         }
         tilesets = tilesets->next;
@@ -270,25 +293,29 @@ void DrawMapLayerTiles(cute_tiled_map_t* map, cute_tiled_layer_t* layer, int pos
 	cute_tiled_tileset_t *ts;
 	cute_tiled_string_t *im;
 	void* image;
+    Texture* texture;
 	op = layer->opacity;
 	for (i = 0; i < layer->height; i++) {
 		for (j = 0; j < layer->width; j++) {
 			gid = layer->data[(i * layer->width) + j];
 
-            cute_tiled_tile_descriptor_t* tile = GetTileFromGid(map, gid);
+            cute_tiled_tile_descriptor_t* tile = GetTileFromGid(map, gid, &texture, &ts);
             
-            if (tile != NULL) {
-                ts = GetTilesetFromHash(map->tilesets, tile->image.hash_id);
-                if (ts != NULL) {
-                    x = ts->margin + (j * ts->tilewidth)  + (j * ts->spacing);
-                    y = ts->margin + (i * ts->tileheight)  + (i * ts->spacing);
-                    // x  = map->tiles[gid]->ul_x;
-                    // y  = map->tiles[gid]->ul_y;
-                    w  = ts->tilewidth;
-                    h  = ts->tileheight;
-                    // flags = (layer->content.gids[(i*map->width)+j]) & ~TMX_FLIP_BITS_REMOVAL;
-                    //DrawMapTile((Texture*)ts->image.ptr, x, y, w, h, j*ts->tilewidth + posX, i*ts->tileheight + posY, op, /*flags,*/ tint);
-                }
+            if (tile != NULL && texture != NULL && ts != NULL) {
+                
+                x = ts->margin + (j * ts->tilewidth)  + (j * ts->spacing);
+                y = ts->margin + (i * ts->tileheight)  + (i * ts->spacing);
+                // x  = map->tiles[gid]->ul_x;
+                // y  = map->tiles[gid]->ul_y;
+                w  = ts->tilewidth;
+                h  = ts->tileheight;
+                // flags = (layer->content.gids[(i*map->width)+j]) & ~TMX_FLIP_BITS_REMOVAL;
+                //DrawMapTile((Texture*)ts->image.ptr, x, y, w, h, j*ts->tilewidth + posX, i*ts->tileheight + posY, op, /*flags,*/ tint);
+
+                TraceLog(LOG_INFO, "OMGOGM %ix%i %iw%ih", texture->width, texture->height, w, h);
+                DrawRectangle(j*ts->tilewidth + posX, i*ts->tileheight + posY, w,h, RED);
+                
+                DrawMapTile(texture, x, y, w, h, j*ts->tilewidth + posX, i*ts->tileheight + posY, op, /*flags,*/ tint);
             }
 		}
 	}
