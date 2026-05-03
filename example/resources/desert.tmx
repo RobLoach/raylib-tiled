@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="40" height="40" tilewidth="32" tileheight="32" infinite="0" nextlayerid="3" nextobjectid="1">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="40" height="40" tilewidth="32" tileheight="32" infinite="0" nextlayerid="6" nextobjectid="8">
  <editorsettings>
   <export target="desert.json" format="json"/>
  </editorsettings>
@@ -117,4 +117,14 @@
 30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30
 </data>
  </layer>
+ <objectgroup color="#ff0000" id="3" name="Polygon">
+  <object id="1" x="378.988" y="1011.51">
+   <polygon points="0,0 -235.234,146.368 -181.653,-37.8988 -299.27,-155.516 -239.155,-295.349 -159.436,-164.664 -147.675,-81.0251 -54.8879,-135.913 -95.4005,-292.736 65.3428,-350.237 230.007,-147.675 75.7976,-115.003 -19.6028,-214.324 -18.296,-111.083 107.162,-52.2742 94.0936,52.2742 -9.14799,230.007 -117.617,246.996 -168.584,216.938 -146.368,152.902 -43.1262,118.924"/>
+  </object>
+ </objectgroup>
+ <objectgroup id="5" name="InvisiblePolygon" visible="0">
+  <object id="7" x="850.763" y="654.735">
+   <polygon points="0,0 1.30686,286.201 378.988,288.815 381.602,0"/>
+  </object>
+ </objectgroup>
 </map>

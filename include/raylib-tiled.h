@@ -46,6 +46,7 @@ Map LoadMapFromMemory(const unsigned char *fileData, int dataSize, const char* b
 bool IsMapValid(Map map);
 void UnloadMap(Map map);
 void DrawMap(Map map, int posX, int posY, Color tint);
+bool CheckCollisionPointLayerPoly(Map map, Vector2 point, Vector2 position, const char* layerName);
 
 #ifdef __cplusplus
 }
@@ -160,7 +161,8 @@ void LoadMapLayerData(cute_tiled_layer_t* layer, const char* baseDir) {
         LoadMapStringTexture(&layer->image, baseDir);
     }
     else if (TextIsEqual(layer->type.ptr, "group")) {
-        cute_tiled_layer_t* layer = layer->layers;
+        cute_tiled_layer_t* layer;
+        layer = layer->layers;
         while (layer) {
             LoadMapLayerData(layer, baseDir);
             layer = layer->next;
@@ -175,7 +177,8 @@ void UnloadMapLayerData(cute_tiled_layer_t* layer) {
         layer->image.ptr = "";
     }
     else if (TextIsEqual(layer->type.ptr, "group")) {
-        cute_tiled_layer_t* layer = layer->layers;
+        cute_tiled_layer_t* layer;
+        layer = layer->layers;
         while (layer) {
             UnloadMapLayerData(layer);
             layer = layer->next;
@@ -262,6 +265,124 @@ cute_tiled_tileset_t* GetTilesetFromHash(cute_tiled_tileset_t* tilesets, CUTE_TI
         tilesets = tilesets->next;
     }
     return NULL;
+}
+
+
+/**
+ * Retrieves the polygon shape from a given Tiled layer object.
+ *
+ * This function extracts the points of a polygon defined in a Tiled map layer and returns them as an array of `Vector2`.
+ * WARNING: One point is added to close the polygon loop.
+ *
+ * If the layer is null, has no objects, or the object's type is not a polygon, the function logs an error and returns null.
+ *
+ * @param object A pointer to the `cute_tiled_object_t` structure representing the Tiled layer object.
+ * @return A dynamically allocated array of `Vector2` representing the polygon points, or `NULL` if an error occurs.
+ *         The caller is responsible for freeing the allocated memory.
+ */
+Vector2* GetPolygonShapeFromObject(cute_tiled_object_t* object) {
+    if (object == NULL) {
+        TraceLog(LOG_ERROR, "TILED: Fail to read layer object");
+        return NULL;
+    }
+
+    if (!object->vert_type && !object->vert_count) {
+        TraceLog(LOG_ERROR, "TILED: Layer type is not polygon");
+        return NULL;
+    }
+
+    int num_points = object->vert_count + 1; // Add one for looping back
+    Vector2* points = (Vector2*)MemAlloc(sizeof(Vector2) * num_points);
+
+    for (int i = 0; i < object->vert_count; i++) {
+        points[i].x = object->x + object->vertices[i * 2];
+        points[i].y = object->y + object->vertices[i * 2 + 1];
+    }
+    // First and last point are the same
+    points[object->vert_count] = points[0];
+
+    return points;
+}
+
+
+/**
+ * Applies an offset to a given array of 2D points, modifying them in place.
+ * Each point in the array is adjusted by adding the specified offset.
+ * Keep in mind that vert_count is +1 when it comes from GetPolygonShape function
+ *
+ * @param points Pointer to an array of Vector2 structures representing the points to offset.
+ * @param pointCount The number of points in the array.
+ * @param offset The offset to apply to all points in the array, represented as a Vector2.
+ * @return Pointer to the updated array of points if the input is not NULL,
+ *         otherwise returns NULL if the input points array is NULL.
+ */
+Vector2* SetPolygonOffset(Vector2* points, int pointCount, Vector2 offset) {
+    if (points == NULL) {
+        return NULL;
+    }
+
+    for (int i = 0; i < pointCount; i++) {
+        points[i].x += offset.x;
+        points[i].y += offset.y;
+    }
+    return points;
+}
+
+cute_tiled_layer_t* GetLayerByName(cute_tiled_map_t* map, const char* layerName) {
+    if (map == NULL || layerName == NULL) {
+        TraceLog(LOG_ERROR, "TILED: Fail to read map");
+        return NULL;
+    }
+    cute_tiled_layer_t* layer = map->layers;
+    while (layer != NULL) {
+        if (TextIsEqual(layer->name.ptr, layerName)) {
+            return layer;
+        }
+        layer = layer->next;
+    }
+    TraceLog(LOG_ERROR, "TILED: No layer %s", layerName);
+    return NULL;
+}
+
+/**
+ * Checks whether a point collides with a polygon shape in a specific layer of a map.
+ *
+ * @param map The map containing the layers and objects to check.
+ * @param point The point to check for collision.
+ * @param position The offset position applied to the polygon.
+ * @param layerName The name of the layer containing the polygon shape to check.
+ * @return True if the point collides with the polygon on the specified layer, false otherwise.
+ */
+bool CheckCollisionPointLayerPoly(Map map, Vector2 point, Vector2 position, const char* layerName) {
+    cute_tiled_layer_t* layer = GetLayerByName(map.map, layerName);
+    if (layer == NULL) {
+        TraceLog(LOG_ERROR, "TILED: Fail to load layer %s", layerName);
+        return NULL;
+    }
+    cute_tiled_object_t* object = layer->objects;
+
+    while (object != NULL) {
+        Vector2* points = GetPolygonShapeFromObject(object);
+        if (points == NULL) {
+            object = object->next;
+            continue;
+        }
+
+        int pointCount = object->vert_count + 1;
+        points = SetPolygonOffset(points, pointCount, position);
+
+        bool colide = CheckCollisionPointPoly(point, points, pointCount);
+
+        //DrawLineStrip(points, pointCount, RED); // DEBUG
+        MemFree(points);
+
+        if (colide) {
+            return true;
+        }
+        object = object->next;
+    }
+    MemFree(object);
+    return false;
 }
 
 void DrawMapTile(Texture *texture, unsigned int sx, unsigned int sy, unsigned int sw, unsigned int sh,
@@ -402,8 +523,22 @@ void DrawMapLayerObjects(cute_tiled_layer_t* layer, int posX, int posY, Color ti
             else if (object->point) {
                 DrawCircle(object->x + posX, object->y + posY, 5.0f, color);
             }
+            else if (object->vert_count) {
+                // check if its polygon or polyline 1 is polygon 0 is polyline
+                if (object->vert_type) {
+                    Vector2* points = GetPolygonShapeFromObject(object);
+                    // last point is added to be the same as first
+                    int num_points = object->vert_count + 1;
+
+                    points = SetPolygonOffset(points, num_points, (Vector2){posX, posY});
+                    // DrawRed line, at the moment there is no way to assign individual color per layer
+                    DrawLineStrip(points, num_points, RED);
+
+                    MemFree(points);
+                }
+            }
             // TODO: Add gid drawing
-            // TODO: Add Polygon/Polyline drawing with vertices, vert_count, and vert_type.
+            // TODO: Add Polyline drawing with vertices
         }
         object = object->next;
     }
