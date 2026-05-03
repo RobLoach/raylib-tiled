@@ -46,6 +46,7 @@ Map LoadMapFromMemory(const unsigned char *fileData, int dataSize, const char* b
 bool IsMapValid(Map map);
 void UnloadMap(Map map);
 void DrawMap(Map map, int posX, int posY, Color tint);
+bool CheckCollisionPointLayerPoly(Map map, Vector2 point, Vector2 position, const char* layerName);
 
 #ifdef __cplusplus
 }
